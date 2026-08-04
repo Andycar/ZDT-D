@@ -72,6 +72,8 @@ fn binary_map() -> BTreeMap<&'static str, bool> {
     out.insert("openvpn", binary_available("/data/adb/modules/ZDT-D/bin/openvpn"));
     out.insert("amneziawg-go", binary_available("/data/adb/modules/ZDT-D/bin/amneziawg-go"));
     out.insert("awg", binary_available("/data/adb/modules/ZDT-D/bin/awg"));
+    out.insert("qwdtt-cli", binary_available("/data/adb/modules/ZDT-D/bin/qwdtt-cli"));
+    out.insert("qwdtt-transport", binary_available("/data/adb/modules/ZDT-D/bin/qwdtt-transport"));
     out.insert("mihomo", binary_available("/data/adb/modules/ZDT-D/bin/mihomo"));
     out.insert("mieru", binary_available("/data/adb/modules/ZDT-D/bin/mieru"));
     out.insert("nfqws", binary_available("/data/adb/modules/ZDT-D/bin/nfqws"));

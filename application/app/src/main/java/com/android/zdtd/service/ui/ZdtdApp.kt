@@ -2429,6 +2429,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "myprogram",
       "openvpn",
       "amneziawg",
+      "qwdtt",
       "tun2socks",
       "mihomo",
       "mieru",

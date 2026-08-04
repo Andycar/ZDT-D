@@ -1350,6 +1350,7 @@ APatch: 10700+</string>
     <string name="openvpn_config_editor_title_fmt">client.ovpn / %1$s</string>
     <string name="openvpn_saving">Сохранение…</string>
     <string name="apps_list_desc_amneziawg">AmneziaWG userspace‑туннель с маршрутизацией через netd</string>
+    <string name="apps_list_desc_qwdtt">Туннель qWDTT: WireGuard через VK TURN‑ретрансляторы, маршрутизация через netd</string>
     <string name="apps_conflict_program_amneziawg">AmneziaWG</string>
     <string name="amneziawg_program_hint">AmneziaWG использует userspace‑интерфейс; маршруты, DNS и UID‑routing приложений делает ZDT-D через vpn_netd.</string>
     <string name="amneziawg_status_profiles">Профили AmneziaWG: %1$d / %2$d</string>
