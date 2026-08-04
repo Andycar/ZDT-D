@@ -12,7 +12,7 @@ use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
     programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
-    programs::{singbox, wireproxy, hysteria2},
+    programs::{singbox, wireproxy, hysteria2, qwdtt},
     stats,
     settings,
     shell,
@@ -150,6 +150,7 @@ pub fn start_full() -> Result<()> {
         .map(|(program, profile)| (program.to_string(), profile.to_string()));
     let vpn_expected = openvpn::has_profiles_requiring_netd()
         || amneziawg::has_profiles_requiring_netd()
+        || qwdtt::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
@@ -164,9 +165,10 @@ pub fn start_full() -> Result<()> {
             // eight hand-written match blocks this replaces. Order matters: vpn_netd::start_profiles()
             // consumes the accumulated list, so engines must be started in this exact sequence.
             // The log label and the user-facing Russian text are kept per engine, unchanged.
-            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 8] = [
+            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 9] = [
                 ("openvpn", "OpenVPN: ошибка запуска, запуск продолжен", openvpn::start_profiles_for_netd),
                 ("amneziawg", "AmneziaWG: ошибка запуска, запуск продолжен", amneziawg::start_profiles_for_netd),
+                ("qwdtt", "qWDTT: ошибка запуска, запуск продолжен", qwdtt::start_profiles_for_netd),
                 ("tun2socks", "tun2socks: ошибка запуска, запуск продолжен", tun2socks::start_profiles_for_netd),
                 ("myvpn", "myvpn: ошибка запуска, запуск продолжен", myvpn::start_profiles_for_netd),
                 ("mihomo", "mihomo: ошибка запуска, запуск продолжен", mihomo::start_profiles_for_netd),
@@ -402,6 +404,7 @@ fn can_adopt_existing_runtime() -> bool {
 
     let vpn_expected = openvpn::has_profiles_requiring_netd()
         || amneziawg::has_profiles_requiring_netd()
+        || qwdtt::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
@@ -588,6 +591,7 @@ fn actual_runtime_has_services() -> bool {
 
     openvpn::is_running()
         || amneziawg::is_running()
+        || qwdtt::is_running()
         || tun2socks::is_running()
         || mihomo::is_running()
         || mieru::is_running()
@@ -805,9 +809,10 @@ fn validate_start_plan_best_effort() {
     // NOTE: hysteria2::validate_start_plan() is deliberately NOT listed here. It was not
     // called before this refactor either; the list is kept identical so behavior does not
     // change. Pending maintainer decision on whether that omission is intentional.
-    let start_plans: [(&str, fn() -> Result<()>); 7] = [
+    let start_plans: [(&str, fn() -> Result<()>); 8] = [
         ("openvpn", openvpn::validate_start_plan),
         ("amneziawg", amneziawg::validate_start_plan),
+        ("qwdtt", qwdtt::validate_start_plan),
         ("tun2socks", tun2socks::validate_start_plan),
         ("myvpn", myvpn::validate_start_plan),
         ("mihomo", mihomo::validate_start_plan),
@@ -838,9 +843,10 @@ fn validate_vpn_claims_unique() -> Result<()> {
 fn validate_vpn_tun_claims_unique() -> Result<()> {
     let mut seen = BTreeMap::<String, String>::new();
     // Same eight sources in the same order as the previous .chain() sequence.
-    let tun_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
+    let tun_claim_sources: [fn() -> Vec<(String, String)>; 9] = [
         openvpn::enabled_tun_claims,
         amneziawg::enabled_tun_claims,
+        qwdtt::enabled_tun_claims,
         tun2socks::enabled_tun_claims,
         myvpn::enabled_tun_claims,
         mihomo::enabled_tun_claims,
@@ -860,8 +866,9 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
 fn validate_vpn_cidr_claims_unique() -> Result<()> {
     // Same seven sources in the same order as the previous .chain() sequence.
     // NOTE: openvpn::enabled_cidr_claims() is intentionally absent, exactly as before.
-    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 7] = [
+    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
         amneziawg::enabled_cidr_claims,
+        qwdtt::enabled_cidr_claims,
         tun2socks::enabled_cidr_claims,
         myvpn::enabled_cidr_claims,
         mihomo::enabled_cidr_claims,

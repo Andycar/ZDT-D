@@ -212,6 +212,9 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_exact_pids("openvpn --config <profile>/client.ovpn", &crate::programs::openvpn::main_pids_exact())?;
     kill_exact_pids("amneziawg-go -f <profile tun>", &crate::programs::amneziawg::main_pids_exact())?;
     crate::programs::amneziawg::cleanup_all_interfaces();
+    // qwdtt: stop_all signals each supervisor first so it can release its TURN
+    // allocations, then drops the interfaces it created.
+    crate::programs::qwdtt::stop_all();
     kill_exact_pids("mihomo -d <profile>/work -f config.runtime.yaml", &crate::programs::mihomo::main_pids_exact())?;
     kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
     kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;

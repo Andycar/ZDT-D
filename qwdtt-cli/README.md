@@ -10,7 +10,7 @@ this design is built on. In short: the upstream `go_client` is already a
 standalone `package main` CLI, so `qwdtt-cli` **supervises it as a child process**
 rather than linking a library.
 
-## What it does (current state — M1 + M2, M3 integration ready)
+## What it does
 
 - Loads a single gitignored config file (`qwdtt.conf`) mirroring the transport's
   flag schema; validates it before spawning anything.
@@ -33,21 +33,18 @@ rather than linking a library.
   allocations are released; exits non-zero when it gives up, so ZDT-D restarts the
   whole stack rather than orphaning a TUN.
 
-- **ZDT-D integration (M3):** `deploy/install-zdtd-profiles.sh` provisions the
-  `myprogram` profile that launches qwdtt-cli and the `myvpn` profile that binds a
-  test app's UID to `zdtdqw0`. See `docs/M3-integration.md`. amneziawg-go is kept
-  in the supervisor's process group so ZDT-D's `kill -15 -- -<pgid>` group-stop
-  reaps it and the TUN auto-removes.
+- **ZDT-D integration:** qWDTT is a first-class program module
+  (`rust/zdtd/src/programs/qwdtt.rs`). One qWDTT profile owns the whole stack: the
+  daemon renders the supervisor config, spawns qwdtt-cli, waits for the TUN and
+  hands it to `vpn_netd` for the UID binding. See `docs/zdtd-integration.md`.
 
 The two upstream deltas (atomic `wg-turn.conf` write, `STATS|` marker) are
 implemented as patches in `../upstream/qwdtt/`.
 
 Verified on-device (S23 Ultra, KernelSU Next, whitelisted SIM): hashes validate,
-the transport reaches the VPS via VK TURN, `zdtdqw0` comes up, and a `myvpn`-bound
-app egresses at the VPS with no manual interface binding. See
-`docs/M3-integration.md`. Remaining work is M4 hardening (throughput/MTU under
-load, energy-saver exemption, proxyInfo, Zygisk interface hiding) and the M5
-first-class program module.
+the transport reaches the VPS via VK TURN, the TUN comes up, and a bound app
+egresses at the VPS with no manual interface binding. See
+`docs/zdtd-integration.md`; remaining work is tracked in `docs/ROADMAP.md`.
 
 ## Layout
 
@@ -57,8 +54,7 @@ internal/config/    config file loader + validation (the invariants)
 internal/transport/ argv builder + structured-stdout marker parsers (pure)
 internal/wg/        wg-turn.conf -> setconf split (pure) + amneziawg-go bring-up
 internal/supervisor/ process orchestration: validate, run, wg bring-up, watchdog, stop
-deploy/            install-zdtd-profiles.sh — provision the myprogram/myvpn profiles
-docs/              M0-findings, M3-integration
+docs/              M0-findings, zdtd-integration, ROADMAP
 qwdtt.example.conf  copy, fill in, keep out of git
 ```
 

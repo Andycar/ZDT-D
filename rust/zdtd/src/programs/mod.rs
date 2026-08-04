@@ -18,6 +18,7 @@ pub mod openvpn;
 pub mod amneziawg;
 pub mod tun2socks;
 pub mod myvpn;
+pub mod qwdtt;
 pub mod mihomo;
 pub mod mieru;
 pub mod tgwsproxy;

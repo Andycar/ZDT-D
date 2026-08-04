@@ -904,6 +904,7 @@ bool owner_program_is_vpn(const char *owner) {
          streq(owner, "myvpn") ||
          streq(owner, "mihomo") ||
          streq(owner, "amneziawg") ||
+         streq(owner, "qwdtt") ||
          streq(owner, "mieru");
 }
 

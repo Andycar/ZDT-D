@@ -383,6 +383,7 @@ fn vpn_profile_root(program: &str, profile: &str) -> Result<PathBuf> {
         "amneziawg" => crate::programs::amneziawg::profile_root(profile),
         "tun2socks" => crate::programs::tun2socks::profile_root(profile),
         "myvpn" => crate::programs::myvpn::profile_root(profile),
+        "qwdtt" => crate::programs::qwdtt::profile_root(profile),
         "mihomo" => crate::programs::mihomo::profile_root(profile),
         "mieru" => crate::programs::mieru::profile_root(profile),
         _ => bail!("not a vpn/netd program: {program}"),
