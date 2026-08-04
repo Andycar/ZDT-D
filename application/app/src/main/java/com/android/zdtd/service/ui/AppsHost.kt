@@ -159,6 +159,14 @@ fun AppsHost(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )
+        "qwdtt" -> QwdttProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
         "tun2socks" -> Tun2SocksProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
@@ -245,6 +253,14 @@ fun AppsHost(
           bottomContentPadding = bottomContentPadding,
         )
         "amneziawg" -> AmneziaWgProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
+        "qwdtt" -> QwdttProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
