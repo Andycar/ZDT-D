@@ -9,7 +9,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import kotlin.coroutines.resume
 
-private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg")
+private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg", "qwdtt")
 
 private suspend fun awaitLoadJsonVpnTunGuard(actions: ZdtdActions, path: String): JSONObject? =
   suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
@@ -29,6 +29,7 @@ private fun defaultTunForVpnProgram(programId: String): String = when (programId
   "myvpn" -> "tun9"
   "mihomo" -> "tun20"
   "amneziawg" -> "awg1"
+  "qwdtt" -> "zdtdqw0"
   "sing-box" -> "sbtun0"
   else -> "tun1"
 }

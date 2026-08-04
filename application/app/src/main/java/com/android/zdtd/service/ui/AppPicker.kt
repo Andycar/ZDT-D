@@ -375,7 +375,7 @@ internal fun AppPickerSheet(
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg" -> "tunnel"
+    "operaproxy", "sing-box", "hysteria2", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg", "qwdtt" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }
@@ -392,6 +392,7 @@ internal fun AppPickerSheet(
       return left != "zapret" && right != "zapret"
     }
     if (leftProgramId == "amneziawg" || rightProgramId == "amneziawg") return true
+    if (leftProgramId == "qwdtt" || rightProgramId == "qwdtt") return true
     return left == right
   }
 

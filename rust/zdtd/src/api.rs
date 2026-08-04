@@ -369,6 +369,7 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "tgwsproxy" => "Telegram WS Proxy",
         "openvpn" => "openvpn",
         "amneziawg" => "amneziawg",
+        "qwdtt" => "qwdtt",
         "tun2socks" => "tun2socks",
         "myvpn" => "myvpn",
         "mihomo" => "mihomo",
@@ -2943,6 +2944,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "id": "amneziawg",
             "name": "amneziawg",
             "type": "amneziawg_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // qwdtt (WireGuard over VK TURN + VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&qwdtt_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "qwdtt",
+            "name": "qwdtt",
+            "type": "qwdtt_profiles",
             "profiles": profiles
         }));
     }
