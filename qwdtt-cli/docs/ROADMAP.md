@@ -112,11 +112,51 @@ by editing `setting.json` on disk:
 1. ~~**API endpoints** in `api.rs`~~ — done: profile CRUD, enable/disable, setting
    read/write, app-list handling and status, plus app-conflict domain, assignment
    scanning and the shared port check.
-2. **`capabilities.rs`** — advertise the program to the app.
-3. **Android API models** — data classes for the app↔daemon API.
-4. **Compose UI** — a qWDTT profile screen.
-5. **`strings.xml`** — EN and RU.
-6. **Docs** — a `PROGRAMS.md` entry.
+2. ~~**`capabilities.rs`**~~ — done: `qwdtt-cli`/`qwdtt-transport` availability is
+   reported. App plumbing done too: `ApiClient` create path, per-profile log
+   browsing, program display name, and `apps_list_desc_qwdtt` in EN + RU.
+3. **Compose UI** — the one piece left. See "UI work" below.
+4. **Docs** — a `PROGRAMS.md` entry.
+
+### UI work — what remains
+
+Model it on `AmneziaWgProfileScreen.kt` (1041 lines), which is the closest
+analogue. Needed:
+
+- `application/app/src/main/java/com/android/zdtd/service/ui/QwdttProfileScreen.kt`
+  — a program screen (list/create/delete/enable profiles) plus a profile editor
+  for the `setting.json` fields: `peer`, `listen_port`, `vk_hashes`, `password`,
+  `workers`, `obfs`, `vk_auth`, `vk_anon_path`, `go_dns`, `captcha_mode`,
+  `device_id`, `timezone`, `tun`, `dns`, `mtu`, `cidr`. There is no config
+  import/upload: `qwdtt.conf` is generated from `setting.json`.
+- `ui/AppsHost.kt` — dispatch `"qwdtt"` to those screens (see the `"amneziawg"`
+  arms around lines 154 and 247). **Until this lands qWDTT does not appear as a
+  tappable program in the app**, even though the daemon and API are complete.
+- `res/values/strings.xml` + `res/values-ru/strings.xml` — the screen's own
+  `qwdtt_*` keys (the amneziawg screen uses ~40 `R.string.amneziawg_*` keys).
+
+The daemon API it talks to is already in place; see the API section of
+`zdtd-integration.md`. `ZdtdActions.loadJsonData/loadText/saveText` plus the
+generic `createProfile`/`deleteProfile`/`setProfileEnabled` are all that is
+needed.
+
+### Build environment required for the UI
+
+The Compose screen cannot be compiled in a network-restricted session — Gradle
+must reach Google Maven, and the SDK download host is the same one. A session
+doing UI work needs:
+
+| Need | Value |
+|---|---|
+| Android SDK | platform `android-36`, build-tools `36.0.0`, cmdline-tools |
+| JDK | 17 |
+| Gradle | 9.4.1 (the repo has **no** `gradlew`; `build.sh` installs a local Gradle) |
+| SDK versions | `compileSdk`/`targetSdk` 36, `minSdk` 26 |
+| Network hosts | `dl.google.com` (Google Maven **and** SDK packages), Maven Central (`repo1.maven.org`), `plugins.gradle.org`, `jitpack.io`, `api.xposed.info`, `services.gradle.org` |
+
+`setup_ubuntu22_zdtd_env_v2.sh` in the repo root installs the SDK/NDK/Gradle set
+and can serve as the environment setup script. Build the app with
+`./build.sh` (it assembles the module zip and runs `assembleRelease`).
 
 The module keeps invoking the `qwdtt-cli` binary rather than absorbing supervision
 into Rust: it reuses proven code, and the module already owns lifecycle and stop
