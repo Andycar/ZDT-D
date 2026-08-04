@@ -109,12 +109,10 @@ The daemon module is in (steps 1, 2, 4, 5 of the `docs/PROGRAMS.md` guide). What
 left is the app-facing surface, so profiles can be managed from the UI rather than
 by editing `setting.json` on disk:
 
-1. **API endpoints** in `api.rs` — profile CRUD, enable/disable, setting
-   read/write, app-list handling, status. Mirror the `amneziawg` endpoints; the
-   module already exposes the functions they need (`read_setting`, `write_setting`,
-   `normalize_setting_value`, `write_active`,
-   `validate_enabled_tun_uniqueness_with_override`, `collect_defined_ports_for_conflict_check`).
-2. **`capabilities.rs`** — advertise the program.
+1. ~~**API endpoints** in `api.rs`~~ — done: profile CRUD, enable/disable, setting
+   read/write, app-list handling and status, plus app-conflict domain, assignment
+   scanning and the shared port check.
+2. **`capabilities.rs`** — advertise the program to the app.
 3. **Android API models** — data classes for the app↔daemon API.
 4. **Compose UI** — a qWDTT profile screen.
 5. **`strings.xml`** — EN and RU.

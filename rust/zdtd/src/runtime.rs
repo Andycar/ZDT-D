@@ -935,6 +935,7 @@ fn any_main_service_running() -> bool {
     let dnscrypt_expected = dnscrypt::active_listen_port().ok().flatten().is_some();
     let openvpn_expected = openvpn::has_enabled_profiles();
     let amneziawg_expected = amneziawg::has_enabled_profiles();
+    let qwdtt_expected = qwdtt::has_enabled_profiles();
     let tun2socks_expected = tun2socks::has_enabled_profiles();
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
@@ -978,6 +979,7 @@ fn any_main_service_running() -> bool {
                 || (dnscrypt_expected && r.dnscrypt.count > 0)
                 || (openvpn_expected && openvpn::is_running())
                 || (amneziawg_expected && amneziawg::is_running())
+                || (qwdtt_expected && qwdtt::is_running())
                 || (tun2socks_expected && tun2socks::is_running())
                 || (myvpn_expected && vpn_netd_has_applied_owner("myvpn"))
                 || (mihomo_expected && mihomo::is_running())

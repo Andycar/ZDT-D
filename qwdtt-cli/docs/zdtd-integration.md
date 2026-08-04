@@ -83,10 +83,35 @@ Shipped in the module and built by CI (`scripts/build-qwdtt-bins.sh`):
   any interface left behind.
 - **validation** — profile name, tun name, DNS, MTU, CIDR, peer `host:port`,
   listen port, hashes, password, workers, obfs, auth/captcha modes, app list.
-- **conflicts** — tun-name and CIDR uniqueness across all VPN engines, plus the
-  local `listen_port` in the shared port check.
+- **conflicts** — tun-name and CIDR uniqueness across all VPN engines, the local
+  `listen_port` contributed to the shared port check, and app-list conflicts via
+  the `exclusive_network` domain.
 - **status** — `is_running()` / `main_pids_exact()` match supervisors started from
   this module's profiles only.
+
+## API
+
+Profiles are managed over the daemon API, mirroring the other VPN engines:
+
+```text
+GET    /api/programs/qwdtt/profiles                      list profiles
+POST   /api/programs/qwdtt/profiles                      create ({"name": "..."} or auto)
+DELETE /api/programs/qwdtt/profiles/<p>                  delete (dir moved to .deleted)
+PUT    /api/programs/qwdtt/profiles/<p>/enabled          {"enabled": true|false}
+GET    /api/programs/qwdtt/profiles/<p>/setting          read setting.json
+PUT    /api/programs/qwdtt/profiles/<p>/setting          write + validate setting.json
+GET    /api/programs/qwdtt/profiles/<p>/apps/user        read the package list
+PUT    /api/programs/qwdtt/profiles/<p>/apps/user        write the package list
+GET    /api/programs/qwdtt/profiles/<p>/status           enabled / running / startable / tun
+```
+
+Enabling a profile validates it first, so a half-configured profile cannot be
+switched on. Writing settings or toggling `enabled` re-checks tun uniqueness
+within qwdtt and against every other VPN engine. The app list participates in the
+shared conflict model as an `exclusive_network` program: a package routed through
+qWDTT cannot also be routed by another VPN/tunnel program. Deleting a profile
+moves its directory aside rather than unlinking it, because it holds the tunnel
+password and VK hashes.
 
 ## Stealth
 

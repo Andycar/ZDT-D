@@ -1846,6 +1846,40 @@ fn amneziawg_deleted_root() -> PathBuf { program_root("amneziawg").join(".delete
 fn amneziawg_deleted_profiles_root() -> PathBuf { amneziawg_deleted_root().join("profiles") }
 fn amneziawg_profile_root(profile: &str) -> PathBuf { crate::programs::amneziawg::profile_root(profile) }
 
+fn qwdtt_active_path() -> PathBuf { crate::programs::qwdtt::active_path() }
+fn qwdtt_deleted_profiles_root() -> PathBuf { program_root("qwdtt").join(".deleted").join("profiles") }
+fn qwdtt_profile_root(profile: &str) -> PathBuf { crate::programs::qwdtt::profile_root(profile) }
+
+fn ensure_qwdtt_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::qwdtt::ensure_profile_layout(profile)
+}
+
+fn create_qwdtt_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::qwdtt::ensure_valid_profile_name(name)?;
+    crate::programs::qwdtt::ensure_root_layout()?;
+    let active_path = qwdtt_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_qwdtt_profile_layout(name)?;
+    Ok(name.to_string())
+}
+
+fn create_qwdtt_profile_next() -> Result<String> {
+    crate::programs::qwdtt::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&qwdtt_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            return create_qwdtt_profile_named(&next);
+        }
+    }
+    anyhow::bail!("no free qwdtt profile name")
+}
+
 fn ensure_amneziawg_profile_layout(profile: &str) -> Result<()> {
     crate::programs::amneziawg::ensure_profile_layout(profile)
 }
@@ -2032,6 +2066,7 @@ fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> R
     for (other_label, other_tun) in crate::programs::openvpn::enabled_tun_claims()
         .into_iter()
         .chain(crate::programs::amneziawg::enabled_tun_claims().into_iter())
+        .chain(crate::programs::qwdtt::enabled_tun_claims().into_iter())
         .chain(crate::programs::tun2socks::enabled_tun_claims().into_iter())
         .chain(crate::programs::myvpn::enabled_tun_claims().into_iter())
         .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
@@ -2224,7 +2259,7 @@ fn app_domain(program_id: &str) -> Option<&'static str> {
         // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
         // marker is ignored by package conflict parsing, and blockedquic has no app
         // routing domain so QUIC blocking may coexist with VPN/netd routing.
-        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
+        "vpn-netd" | "openvpn" | "amneziawg" | "qwdtt" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" | "hysteria2" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
@@ -2434,6 +2469,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/amneziawg/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let qwdtt_root = crate::programs::qwdtt::profiles_root();
+    if let Ok(rd) = fs::read_dir(&qwdtt_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "qwdtt",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/qwdtt/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -3214,6 +3266,184 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             })();
             match res {
                 Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- qwdtt profile API
+        ("GET", ["api", "programs", "qwdtt", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::qwdtt::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&qwdtt_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "qwdtt", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = if body.is_empty() { Req { name: None } } else {
+                    serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?
+                };
+                let name = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_qwdtt_profile_named(name)?,
+                    None => create_qwdtt_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": name}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "qwdtt", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = qwdtt_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::qwdtt::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                if req.enabled {
+                    // A profile can only be enabled once it is actually startable.
+                    let setting = crate::programs::qwdtt::read_setting(profile)?;
+                    crate::programs::qwdtt::validate_setting(&setting)?;
+                    validate_cross_vpn_tun_claim("qwdtt", profile, &setting.tun)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "qwdtt", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                let p = qwdtt_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = qwdtt_profile_root(profile);
+                if src.exists() {
+                    // The profile dir holds the tunnel password and VK hashes, so it
+                    // is moved aside rather than left in place under a live name.
+                    let deleted_dir = qwdtt_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "qwdtt", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                ensure_qwdtt_profile_layout(profile)?;
+                let p = qwdtt_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "qwdtt", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                ensure_qwdtt_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::qwdtt::normalize_setting_value(v)?;
+                crate::programs::qwdtt::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                if is_profile_enabled(&qwdtt_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("qwdtt", profile, &setting.tun)?;
+                }
+                crate::programs::qwdtt::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "qwdtt", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                ensure_qwdtt_profile_layout(profile)?;
+                let p = qwdtt_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "qwdtt", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                ensure_qwdtt_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/qwdtt/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "qwdtt", "common")?;
+                let p = qwdtt_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "qwdtt", Some(profile), "common")?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "qwdtt", "profiles", profile, "status"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::qwdtt::ensure_valid_profile_name(profile)?;
+                let enabled = is_profile_enabled(&qwdtt_active_path(), profile);
+                let setting = crate::programs::qwdtt::read_setting(profile).unwrap_or_default();
+                let startable = crate::programs::qwdtt::validate_setting(&setting).is_ok();
+                Ok(json!({
+                    "ok": true,
+                    "enabled": enabled,
+                    "running": crate::programs::qwdtt::is_running(),
+                    "startable": startable,
+                    "tun": setting.tun,
+                }))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
                 Err(e) => write_err(stream, e),
             }
         }

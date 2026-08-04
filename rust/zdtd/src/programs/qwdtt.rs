@@ -49,7 +49,6 @@ const QWDTT_CLI_BIN: &str = "/data/adb/modules/ZDT-D/bin/qwdtt-cli";
 const QWDTT_TRANSPORT_BIN: &str = "/data/adb/modules/ZDT-D/bin/qwdtt-transport";
 const AWG_GO_BIN: &str = "/data/adb/modules/ZDT-D/bin/amneziawg-go";
 const AWG_BIN: &str = "/data/adb/modules/ZDT-D/bin/awg";
-const QWDTT_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/qwdtt";
 const QWDTT_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/qwdtt/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/qwdtt/active.json";
 /// amneziawg-go and awg agree on the UAPI socket only under this directory.
@@ -207,7 +206,6 @@ fn split_dns_text(s: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn root_path() -> PathBuf { PathBuf::from(QWDTT_ROOT) }
 pub fn active_path() -> PathBuf { PathBuf::from(ACTIVE_JSON) }
 pub fn profiles_root() -> PathBuf { PathBuf::from(QWDTT_PROFILE_ROOT) }
 pub fn profile_root(profile: &str) -> PathBuf { profiles_root().join(profile) }
@@ -253,11 +251,6 @@ pub fn ensure_root_layout() -> Result<()> {
 pub fn read_active() -> Result<ActiveProfiles> {
     ensure_root_layout()?;
     read_json(&active_path())
-}
-
-pub fn write_active(active: &ActiveProfiles) -> Result<()> {
-    ensure_root_layout()?;
-    write_json_pretty(&active_path(), active)
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
@@ -503,12 +496,6 @@ pub fn validate_start_plan() -> Result<()> {
     }
 
     if errors.is_empty() { Ok(()) } else { bail!("qwdtt start plan has issue(s): {}", errors.join("; ")) }
-}
-
-pub fn start_if_enabled() -> Result<()> {
-    let profiles = start_profiles_for_netd()?;
-    crate::vpn_netd::start_profiles(profiles)?;
-    Ok(())
 }
 
 /// Start every enabled profile and return the descriptors `vpn_netd` binds.
@@ -800,10 +787,6 @@ pub fn stop_all() {
     for tun in tuns {
         cleanup_interface(&tun);
     }
-}
-
-pub fn cleanup_all_interfaces() {
-    stop_all();
 }
 
 fn cleanup_interface(tun: &str) {

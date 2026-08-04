@@ -146,6 +146,9 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
             used.insert(e.port);
         }
     }
+    // qwdtt profiles own a loopback UDP port for the WireGuard endpoint; it has no
+    // editable port.json, so it is contributed here.
+    used.extend(crate::programs::qwdtt::collect_defined_ports_for_conflict_check());
     if !exclude_singbox {
         used.extend(collect_defined_singbox_ports());
     }
