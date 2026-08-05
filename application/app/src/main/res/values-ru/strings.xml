@@ -1390,7 +1390,8 @@ APatch: 10700+</string>
     <string name="qwdtt_go_dns_label">DNS для VK</string>
     <string name="qwdtt_go_dns_hint">Резолвер для доступа к VK, не DNS туннеля: yandex, cloudflare, custom:IP или doh:URL</string>
     <string name="qwdtt_device_id_label">ID устройства</string>
-    <string name="qwdtt_device_id_hint">Необязательный постоянный идентификатор для авторизации VK</string>
+    <string name="qwdtt_device_id_hint">16 шестнадцатеричных цифр — к этому идентификатору привязан пароль туннеля</string>
+    <string name="qwdtt_device_id_invalid">Укажите ID устройства из 16 шестнадцатеричных цифр; неверное значение сервер отклонит</string>
     <string name="qwdtt_timezone_label">Смещение времени в логах</string>
     <string name="qwdtt_timezone_hint">Фиксированное смещение UTC для меток в логах, например UTC+3</string>
     <string name="qwdtt_tun_label">Интерфейс TUN</string>

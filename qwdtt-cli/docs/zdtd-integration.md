@@ -57,7 +57,8 @@ working_folder/qwdtt/profile/<name>/log/qwdtt.log       supervisor log
 | `vk_auth` / `vk_anon_path` | `anonymous` / `vkcalls` | |
 | `go_dns` | `yandex` | resolver used to *reach* VK, not tunnel DNS |
 | `captcha_mode` | `auto` | `auto` or `rjs`; WebView cannot run headless |
-| `device_id`, `timezone` | *(empty)* | stable device identity; log clock offset |
+| `device_id` | — | 16 hex digits. **Required** — the password is bound to it server-side |
+| `timezone` | *(empty)* | fixed UTC offset for log timestamps, e.g. `UTC+3` |
 
 ## Binaries
 
@@ -139,3 +140,9 @@ Zygisk layer hides it from the selected UIDs: `applied.json` records
   direct and a whitelist ISP drops it (the request just hangs).
 - **Immediate restarts:** the transport exits non-zero (missing password,
   unreachable VK). Fix `setting.json`; `qwdtt.conf` is regenerated on each start.
+- **`wg-turn.conf not written within 1m30s`:** the workers never got far enough to
+  fetch the tunnel config. The line after it names the reason, e.g.
+  `no config because the transport's workers failed: FATAL_AUTH x9` — the VPS
+  rejected the credentials, so check `device_id` and `password`. Only worker
+  group #1 fetches the config, so nine dead workers are enough to strand the
+  whole profile even when the rest connect.

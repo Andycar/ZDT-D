@@ -116,7 +116,8 @@ pub struct ProfileSetting {
     /// auto | rjs. WebView is not available headless.
     #[serde(default = "default_captcha_mode")]
     pub captcha_mode: String,
-    /// Stable device identity used for VK auth.
+    /// Stable device identity used for VK auth: 16 hex digits, the shape of an
+    /// Android SSAID. Required — the tunnel password is bound to it server-side.
     #[serde(default)]
     pub device_id: String,
     /// Fixed UTC offset for supervisor log timestamps, e.g. "UTC+3".
@@ -275,6 +276,8 @@ pub fn normalize_setting_value(value: serde_json::Value) -> Result<ProfileSettin
     setting.vk_anon_path = setting.vk_anon_path.trim().to_ascii_lowercase();
     setting.captcha_mode = setting.captcha_mode.trim().to_ascii_lowercase();
     setting.cidr = setting.cidr.trim().to_string();
+    setting.device_id = setting.device_id.trim().to_string();
+    setting.timezone = setting.timezone.trim().to_string();
     setting.vk_hashes = setting
         .vk_hashes
         .into_iter()
@@ -316,6 +319,13 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
     if setting.workers == 0 || setting.workers > 108 {
         bail!("workers must be in range 1..108");
     }
+    if !is_device_id(setting.device_id.trim()) {
+        // The VPS binds the password to one device identity. A blank or mistyped
+        // value is not a soft failure: every worker dies with FATAL_AUTH, worker
+        // group #1 never fetches the tunnel config, and the profile hangs until
+        // the supervisor's startup deadline expires.
+        bail!("device_id is required and must be 16 hex digits (the identity the password is bound to)");
+    }
     match setting.obfs.as_str() {
         "audio" | "video" => {}
         other => bail!("obfs must be audio or video, got {other}"),
@@ -334,6 +344,11 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
         other => bail!("captcha_mode must be auto or rjs, got {other}"),
     }
     Ok(())
+}
+
+/// True when `s` has the shape of an Android SSAID: exactly 16 hex digits.
+fn is_device_id(s: &str) -> bool {
+    s.len() == 16 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn validate_host_port(s: &str) -> Result<()> {
@@ -672,9 +687,7 @@ fn write_supervisor_config(plan: &ProfilePlan) -> Result<()> {
     out.push_str(&format!("vk_anon_path = {}\n", s.vk_anon_path));
     out.push_str(&format!("go_dns = {}\n", s.go_dns));
     out.push_str(&format!("captcha_mode = {}\n", s.captcha_mode));
-    if !s.device_id.trim().is_empty() {
-        out.push_str(&format!("device_id = {}\n", s.device_id.trim()));
-    }
+    out.push_str(&format!("device_id = {}\n", s.device_id.trim()));
     if !s.timezone.trim().is_empty() {
         out.push_str(&format!("timezone = {}\n", s.timezone.trim()));
     }

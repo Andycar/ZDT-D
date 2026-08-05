@@ -215,6 +215,17 @@ private fun isValidQwdttPeer(value: String): Boolean {
   return host.isNotBlank() && host.all { it.isLetterOrDigit() || it == '.' || it == '-' }
 }
 
+/**
+ * The device identity the VPS binds the tunnel password to: 16 hex digits, the
+ * shape of an Android SSAID. Required — a blank value used to be sent as
+ * "unknown", which the VPS rejects with FATAL_AUTH on every worker, leaving the
+ * profile to hang until the supervisor's startup deadline with no obvious cause.
+ */
+private fun isValidQwdttDeviceId(value: String): Boolean {
+  val v = value.trim()
+  return v.length == 16 && v.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
+}
+
 private fun qwdttProfileIndex(name: String): Int {
   val n = name.trim()
   n.toIntOrNull()?.let { return it }
@@ -509,10 +520,11 @@ fun QwdttProfileScreen(
   val mtuValue = remember(mtuText) { mtuText.trim().toIntOrNull()?.takeIf { it in 576..9000 } }
   val cidrValid = remember(cidrText) { cidrText.isBlank() || isValidQwdttCidr(cidrText) }
   val passwordValid = remember(passwordText) { passwordText.isNotBlank() }
+  val deviceIdValid = remember(deviceIdText) { isValidQwdttDeviceId(deviceIdText) }
 
   val settingComplete = peerValid && hashesParsed != null && passwordValid &&
     listenPortValue != null && workersValue != null && mtuValue != null &&
-    dnsParsed != null && tunValid && cidrValid
+    dnsParsed != null && tunValid && cidrValid && deviceIdValid
 
   LaunchedEffect(
     peerText, hashesText, passwordText, listenPortText, workersText, obfs, vkAuth, vkAnonPath,
@@ -713,13 +725,17 @@ fun QwdttProfileScreen(
         )
         OutlinedTextField(
           value = deviceIdText,
-          onValueChange = { deviceIdText = it.trim().take(32) },
+          onValueChange = { deviceIdText = it.trim().take(16) },
           modifier = Modifier.fillMaxWidth(),
           label = { Text(stringResource(R.string.qwdtt_device_id_label)) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
           singleLine = true,
+          isError = !deviceIdValid,
           supportingText = { Text(stringResource(R.string.qwdtt_device_id_hint)) },
         )
+        if (!deviceIdValid) {
+          Text(stringResource(R.string.qwdtt_device_id_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
         OutlinedTextField(
           value = timezoneText,
           onValueChange = { timezoneText = it.trim().take(10) },

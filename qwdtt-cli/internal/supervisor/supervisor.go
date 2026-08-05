@@ -30,6 +30,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -155,7 +156,7 @@ func validateHashes(ctx context.Context, cfg *config.Config, logger *log.Logger)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = logWriter{logger, "check"}
+	cmd.Stderr = logWriter{logger: logger, prefix: "check"}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start check: %w", err)
 	}
@@ -188,23 +189,31 @@ func validateHashes(ctx context.Context, cfg *config.Config, logger *log.Logger)
 }
 
 type runOutcome struct {
-	stopped  bool // ended because parent ctx was cancelled (clean shutdown)
-	watchdog bool // ended because the watchdog forced a restart
-	wgFailed bool // ended because the WireGuard bring-up failed (local, not hash-related)
+	stopped  bool   // ended because parent ctx was cancelled (clean shutdown)
+	watchdog bool   // ended because the watchdog forced a restart
+	wgFailed bool   // ended because the WireGuard bring-up failed (local, not hash-related)
+	fatals   string // fatal transport tokens seen this lifetime, e.g. "FATAL_AUTH x9"
 	exitErr  error
 }
 
 func (r runOutcome) reason() string {
+	var base string
 	switch {
 	case r.wgFailed:
-		return "wg bring-up failure"
+		base = "wg bring-up failure"
 	case r.watchdog:
-		return "watchdog"
+		base = "watchdog"
 	case r.exitErr != nil:
-		return "exit: " + r.exitErr.Error()
+		base = "exit: " + r.exitErr.Error()
 	default:
-		return "process exit"
+		base = "process exit"
 	}
+	if r.fatals != "" {
+		// Without this a restart loop caused by rejected credentials reads as a
+		// plain readiness timeout, which says nothing about the real cause.
+		base += "; transport fatals: " + r.fatals
+	}
+	return base
 }
 
 // runTransport runs a single transport lifetime. It returns when the child exits,
@@ -228,7 +237,8 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 	if err != nil {
 		return runOutcome{exitErr: fmt.Errorf("stdout pipe: %w", err)}
 	}
-	cmd.Stderr = logWriter{logger, "transport"}
+	fatals := &fatalTracker{logger: logger}
+	cmd.Stderr = logWriter{logger: logger, prefix: "transport", fatals: fatals}
 
 	if err := cmd.Start(); err != nil {
 		return runOutcome{exitErr: fmt.Errorf("start transport: %w", err)}
@@ -246,7 +256,7 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 	}
 
 	// stdout marker reader.
-	go readMarkers(stdout, &activeWorkers, logger)
+	go readMarkers(stdout, &activeWorkers, fatals, logger)
 
 	// captcha token feed.
 	if cfg.CaptchaTokenFile != "" {
@@ -271,7 +281,7 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 	var watchdogTripped atomic.Bool
 	var wgBringupFailed atomic.Bool
 	go func() {
-		if !awaitConfig(runCtx, cfg, logger) {
+		if !awaitConfig(runCtx, cfg, fatals, logger) {
 			return // ctx cancelled or run already ending
 		}
 		logger.Printf("%s written; transport ready", configFile)
@@ -338,14 +348,19 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 	select {
 	case err := <-waitErr:
 		// Child exited on its own.
-		return runOutcome{exitErr: err, watchdog: watchdogTripped.Load(), stopped: false}
+		return runOutcome{exitErr: err, watchdog: watchdogTripped.Load(), stopped: false, fatals: fatals.summary()}
 	case <-runCtx.Done():
 		// Either a clean parent shutdown or a watchdog-forced restart. Both drive
 		// the same graceful teardown; the transport releases its TURN allocations
 		// on ctx cancel, so we must never SIGKILL first.
 		stopped := ctx.Err() != nil && !watchdogTripped.Load()
 		gracefulStop(cmd, sendLine, waitErr, logger)
-		return runOutcome{stopped: stopped, watchdog: watchdogTripped.Load(), wgFailed: wgBringupFailed.Load()}
+		return runOutcome{
+			stopped:  stopped,
+			watchdog: watchdogTripped.Load(),
+			wgFailed: wgBringupFailed.Load(),
+			fatals:   fatals.summary(),
+		}
 	}
 }
 
@@ -417,7 +432,7 @@ func gracefulStop(cmd *exec.Cmd, sendLine func(string), waitErr <-chan error, lo
 // readMarkers consumes the transport's stdout, updating the active-worker gauge
 // from STATS| markers and echoing everything for observability. Control decisions
 // use only the structured markers, never the localized log text.
-func readMarkers(r io.Reader, active *atomic.Int32, logger *log.Logger) {
+func readMarkers(r io.Reader, active *atomic.Int32, fatals *fatalTracker, logger *log.Logger) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -428,6 +443,7 @@ func readMarkers(r io.Reader, active *atomic.Int32, logger *log.Logger) {
 		if st, ok := transport.ParseStats(line); ok {
 			active.Store(int32(st.Active))
 		}
+		fatals.observe(line)
 		// The transport pretty-prints the emitted WireGuard config in a box frame.
 		// Drop it: it is a dozen redundant lines per start, and it puts the tunnel
 		// PrivateKey in the log. The config is written to wg-turn.conf anyway, and
@@ -436,6 +452,80 @@ func readMarkers(r io.Reader, active *atomic.Int32, logger *log.Logger) {
 			continue
 		}
 		logger.Printf("[transport] %s", line)
+	}
+}
+
+// fatalTokenRe matches the ASCII error tokens the transport prefixes its fatal
+// worker messages with, e.g. "FATAL_AUTH: <localized prose>". Only the token is
+// read; the prose after it is Russian and never drives anything here.
+var fatalTokenRe = regexp.MustCompile(`FATAL_[A-Z0-9_]+`)
+
+// fatalTracker tallies the fatal tokens seen on the transport's output during a
+// single lifetime. A dead worker group is invisible in the supervisor's own log
+// otherwise: group #1 is the only group that fetches the tunnel config, so when
+// its workers die the sole symptom is "wg-turn.conf not written" 90 seconds
+// later, which points at the wrong thing entirely.
+//
+// This is diagnostics, not supervision — nothing here changes control flow.
+type fatalTracker struct {
+	logger *log.Logger
+
+	mu     sync.Mutex
+	counts map[string]int
+	order  []string // tokens in first-seen order, for stable output
+}
+
+// observe records any fatal token on the line and explains the first occurrence
+// of each distinct token in the supervisor's own words.
+func (t *fatalTracker) observe(line string) {
+	if t == nil {
+		return
+	}
+	tok := fatalTokenRe.FindString(line)
+	if tok == "" {
+		return
+	}
+	t.mu.Lock()
+	if t.counts == nil {
+		t.counts = make(map[string]int)
+	}
+	first := t.counts[tok] == 0
+	if first {
+		t.order = append(t.order, tok)
+	}
+	t.counts[tok]++
+	t.mu.Unlock()
+
+	if first && t.logger != nil {
+		t.logger.Printf("transport reported %s — %s", tok, fatalHint(tok))
+	}
+}
+
+// summary renders the tally as "FATAL_AUTH x9", or "" if nothing fatal was seen.
+func (t *fatalTracker) summary() string {
+	if t == nil {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	parts := make([]string, 0, len(t.order))
+	for _, tok := range t.order {
+		parts = append(parts, fmt.Sprintf("%s x%d", tok, t.counts[tok]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// fatalHint translates a transport error token into an actionable cause. Keyed
+// on the ASCII token only, so it survives any wording change upstream.
+func fatalHint(tok string) string {
+	switch tok {
+	case "FATAL_AUTH":
+		return "the VPS rejected the credentials: password expired, or bound to a " +
+			"device_id other than the one in this config (an unset device_id is sent as \"unknown\")"
+	case "FATAL_HASH":
+		return "the VK call hash was refused; regenerate it"
+	default:
+		return "the transport treats this as unrecoverable; see the [transport] lines above"
 	}
 }
 
@@ -453,7 +543,7 @@ func isConfigBoxLine(line string) bool {
 // awaitConfig blocks until wg-turn.conf appears (non-empty) in the state dir, the
 // startup deadline elapses, or the run context is cancelled. Watching the file is
 // language-independent, unlike parsing the "[КОНФИГ] Сохранён" log line.
-func awaitConfig(ctx context.Context, cfg *config.Config, logger *log.Logger) bool {
+func awaitConfig(ctx context.Context, cfg *config.Config, fatals *fatalTracker, logger *log.Logger) bool {
 	path := filepath.Join(cfg.StateDir, configFile)
 	deadline := time.NewTimer(cfg.StartupDeadline)
 	defer deadline.Stop()
@@ -465,6 +555,12 @@ func awaitConfig(ctx context.Context, cfg *config.Config, logger *log.Logger) bo
 			return false
 		case <-deadline.C:
 			logger.Printf("watchdog: %s not written within %s", configFile, cfg.StartupDeadline)
+			if s := fatals.summary(); s != "" {
+				// The config is fetched by worker group #1 alone, so its workers
+				// dying is the usual reason the file never lands. Name that here
+				// instead of leaving it buried in the transport's own output.
+				logger.Printf("watchdog: no config because the transport's workers failed: %s", s)
+			}
 			return false
 		case <-ticker.C:
 			if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
@@ -529,6 +625,7 @@ func feedCaptchaTokens(ctx context.Context, path string, sendLine func(string), 
 type logWriter struct {
 	logger *log.Logger
 	prefix string
+	fatals *fatalTracker // optional; nil for stages with no restart loop
 }
 
 func (w logWriter) Write(p []byte) (int, error) {
@@ -536,6 +633,7 @@ func (w logWriter) Write(p []byte) (int, error) {
 		// The child stamps its own lines with a Go-logger timestamp; strip it so
 		// each line carries exactly one (local-time) timestamp, ours.
 		if line = logging.StripChildTimestamp(line); line != "" {
+			w.fatals.observe(line)
 			w.logger.Printf("[%s] %s", w.prefix, line)
 		}
 	}

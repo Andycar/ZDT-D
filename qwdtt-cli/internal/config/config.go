@@ -71,7 +71,10 @@ type Config struct {
 	// CaptchaMode is "auto" or "rjs". "wv" (WebView) is rejected — there is no
 	// WebView headless. Default "auto".
 	CaptchaMode string
-	// DeviceID is the stable 8-byte hex device identity.
+	// DeviceID is the stable 8-byte hex device identity (16 hex digits, the shape
+	// Android's SSAID uses). Required: the tunnel password is bound to one device
+	// identity server-side, so a missing or mistyped value is not a soft failure —
+	// every worker dies with FATAL_AUTH and no tunnel config is ever fetched.
 	DeviceID string
 
 	// SeedProfile, if set, is copied into StateDir/vk_profile.json when that file
@@ -197,7 +200,6 @@ func defaults() *Config {
 		VKAnonPath:      "vkcalls",
 		GoDNS:           "yandex",
 		CaptchaMode:     "auto",
-		DeviceID:        "unknown",
 		StartupDeadline: 90 * time.Second,
 		MaxRestarts:     10,
 		RestartBackoff:  5 * time.Second,
@@ -385,6 +387,13 @@ func (c *Config) Validate() error {
 	if c.Workers < 1 {
 		return fmt.Errorf("workers must be >= 1")
 	}
+	if !isDeviceID(c.DeviceID) {
+		// Refusing here costs one line; accepting a placeholder costs a full
+		// startup deadline of workers dying against the VPS on a whitelist SIM.
+		return fmt.Errorf(
+			"device_id %q must be 16 hex digits — the identity the tunnel password is bound to",
+			c.DeviceID)
+	}
 	switch c.Mode {
 	case "vpn":
 	case "socks":
@@ -459,6 +468,20 @@ func isValidIfname(name string) bool {
 	for _, r := range name {
 		if !(r == '_' || r == '.' || r == '-' || (r >= 'a' && r <= 'z') ||
 			(r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
+}
+
+// isDeviceID reports whether s has the shape of an Android SSAID — 16 hex
+// digits, the identity the qWDTT app registers with the VPS.
+func isDeviceID(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
 			return false
 		}
 	}
